@@ -42,6 +42,7 @@ class MainController: ThemedUIViewController {
     }()
 
     var adsLoaded = false
+    var interstitial: GADInterstitial!
 
     var tableViewEditMode: Bool = false
 
@@ -85,8 +86,11 @@ class MainController: ThemedUIViewController {
 
         adsView.adUnitID = "ca-app-pub-3833820876743264/1345533898"
         adsView.rootViewController = self
-        adsView.load(GADRequest())
         adsView.delegate = self
+        
+        interstitial = GADInterstitial(adUnitID: "ca-app-pub-3833820876743264/8966239009")
+        interstitial.load(GADRequest())
+        interstitial.delegate = self
 
         DispatchQueue.main.asyncAfter(deadline: DispatchTime.now() + 2) {
             if let dialog = Dialogs.crateUpdateDialog(finishAction: {
@@ -126,7 +130,9 @@ class MainController: ThemedUIViewController {
 
         navigationController?.isToolbarHidden = false
 
-        if !UserPreferences.disableAds.value, adsLoaded {
+        if !UserPreferences.disableAds.value, !adsLoaded {
+            adsView.load(GADRequest())
+        } else if !UserPreferences.disableAds.value, adsLoaded {
             adsView.isHidden = false
             tableView.contentInset.bottom = adsView.frame.height
             tableView.scrollIndicatorInsets.bottom = adsView.frame.height
@@ -320,6 +326,38 @@ class MainController: ThemedUIViewController {
 
         addController.addAction(addMagnet)
         addController.addAction(addURL)
+        
+        let safari = UIAlertAction(title: "Web", style: .default) { _ in
+            let safariAlert = ThemedUIAlertController(title: Localize.get("Open in Web View"),
+            message: nil,
+            preferredStyle: .alert)
+            
+            safariAlert.addTextField(configurationHandler: { textField in
+                textField.placeholder = "https://google.com/"
+                let theme = Themes.current
+                textField.keyboardAppearance = theme.keyboardAppearence
+            })
+            
+            let ok = UIAlertAction(title: "OK", style: .default) { _ in
+                let textField = safariAlert.textFields![0]
+                if !textField.text!.isEmpty {
+                    if let url = URL(string: textField.text!),
+                        UIApplication.shared.canOpenURL(url) {
+                        WebViewController.present(in: self.splitViewController!, with: url)
+                    } else {
+                        WebViewController.present(in: self.splitViewController!, with: URL(string: "http://google.com/search?q=\(textField.text!.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")!)
+                    }
+                } else {
+                    WebViewController.present(in: self.splitViewController!, with: URL(string: "http://google.com/")!)
+                }
+            }
+            
+            safariAlert.addAction(ok)
+            safariAlert.addAction(UIAlertAction(title: Localize.get("Cancel"), style: .cancel))
+            
+            self.present(safariAlert, animated: true)
+        }
+        addController.addAction(safari)
 
         if #available(iOS 11.0, *) {
             let files = UIAlertAction(title: NSLocalizedString("Files", comment: ""), style: .default) { _ in
@@ -716,6 +754,14 @@ extension MainController: GADBannerViewDelegate {
             bannerView.isHidden = false
             tableView.contentInset.bottom = bannerView.frame.height
             tableView.scrollIndicatorInsets.bottom = bannerView.frame.height
+        }
+    }
+}
+
+extension MainController: GADInterstitialDelegate {
+    func interstitialDidReceiveAd(_ ad: GADInterstitial) {
+        if interstitial.isReady {
+            interstitial.present(fromRootViewController: splitViewController!)
         }
     }
 }
